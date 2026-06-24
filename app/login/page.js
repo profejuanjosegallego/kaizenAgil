@@ -5,9 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/components/api";
 import { PasswordInput } from "@/components/ui";
 import LoadingScreen from "@/components/LoadingScreen";
-import { Kanban, MousePointerClick, ChartColumn, ShieldCheck, GraduationCap, School, ExternalLink } from "@/components/icons";
-
-const REVUELTA_URL = "https://re-vuelta.vercel.app/";
+import { Kanban, MousePointerClick, ChartColumn, ShieldCheck, GraduationCap, School } from "@/components/icons";
 import { ROLES } from "@/lib/constants";
 
 export default function LoginPage() {
@@ -297,15 +295,6 @@ function LoginInner() {
               </>
             )}
           </p>
-
-          <a
-            href={REVUELTA_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 flex items-center justify-center gap-1.5 rounded-xl border border-line bg-paper-2/50 px-3 py-2 text-xs font-semibold text-pine hover:border-pine hover:text-clay"
-          >
-            <ExternalLink size={14} /> Conoce el proyecto ReVuelta
-          </a>
         </div>
       </section>
     </main>

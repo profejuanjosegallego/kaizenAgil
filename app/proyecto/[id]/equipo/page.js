@@ -264,6 +264,7 @@ export default function TeamPage() {
           projectId={id}
           teams={teams}
           members={members}
+          ownerId={project?.owner?.id || project?.owner}
           onClose={() => setModal(null)}
           onAdded={(membership) => {
             setMembers((prev) => [...prev, membership]);

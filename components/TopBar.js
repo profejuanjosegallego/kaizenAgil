@@ -2,15 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "@/components/api";
 import { Avatar } from "@/components/ui";
-import ChangePasswordModal from "@/components/ChangePasswordModal";
-import { Settings, LogOut, KeyRound } from "@/components/icons";
+import ProfileModal from "@/components/ProfileModal";
+import { Settings, LogOut, UserCog } from "@/components/icons";
 
 export default function TopBar({ user, breadcrumb, tabs, activeTab }) {
   const router = useRouter();
-  const [showPassword, setShowPassword] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  // Copia local para reflejar de inmediato el nombre editado en "Mi cuenta".
+  const [account, setAccount] = useState(user);
+  useEffect(() => setAccount(user), [user]);
 
   async function logout() {
     await api.post("/api/auth/logout");
@@ -33,7 +36,7 @@ export default function TopBar({ user, breadcrumb, tabs, activeTab }) {
         )}
 
         <div className="ml-auto flex items-center gap-3">
-          {user?.superAdmin && (
+          {account?.superAdmin && (
             <Link
               href="/admin"
               className="hidden items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-ink hover:border-pine hover:text-pine sm:inline-flex"
@@ -41,25 +44,25 @@ export default function TopBar({ user, breadcrumb, tabs, activeTab }) {
               <Settings size={14} /> Administración
             </Link>
           )}
-          {user && (
+          {account && (
             <div className="flex items-center gap-2">
-              <Avatar name={user.name} color={user.avatarColor} />
+              <Avatar name={account.name} color={account.avatarColor} />
               <div className="hidden text-right leading-tight sm:block">
-                <div className="text-sm font-semibold text-ink">{user.name}</div>
+                <div className="text-sm font-semibold text-ink">{account.name}</div>
                 <div className="text-[11px] uppercase tracking-wide text-ink/45">
-                  {user.role}
+                  {account.role}
                 </div>
               </div>
             </div>
           )}
-          {user && (
+          {account && (
             <button
-              onClick={() => setShowPassword(true)}
+              onClick={() => setShowProfile(true)}
               className="grid h-8 w-8 place-items-center rounded-full border border-line text-ink/55 hover:border-pine hover:text-pine"
-              title="Cambiar contraseña"
-              aria-label="Cambiar contraseña"
+              title="Mi cuenta"
+              aria-label="Mi cuenta"
             >
-              <KeyRound size={15} />
+              <UserCog size={15} />
             </button>
           )}
           <button onClick={logout} className="btn-ghost gap-1.5 px-3 py-1.5 text-xs">
@@ -86,7 +89,13 @@ export default function TopBar({ user, breadcrumb, tabs, activeTab }) {
         </div>
       )}
 
-      {showPassword && <ChangePasswordModal onClose={() => setShowPassword(false)} />}
+      {showProfile && account && (
+        <ProfileModal
+          user={account}
+          onClose={() => setShowProfile(false)}
+          onUpdated={(updated) => setAccount((prev) => ({ ...prev, ...updated }))}
+        />
+      )}
     </header>
   );
 }

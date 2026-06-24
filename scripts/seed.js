@@ -2,13 +2,23 @@
 /**
  * Semilla de datos. Crea (o recrea) un proyecto de EJEMPLO: "ReVuelta".
  * - 1 docente administrador (de las variables SEED_ADMIN_*)
- * - 5 equipos (cada uno con su color), 18 estudiantes (uno por tabla)
- * - HUs por cada capa del backend + frontend, TODAS en "Por hacer",
- *   con criterios de aceptación y ordenadas por temática (primero BD,
- *   luego modelo, repositorio, etc.). Las HU de BD y modelo usan los
- *   campos y relaciones reales de cada tabla diseñada.
+ * - 5 equipos de estudiantes (18 tablas) + 1 equipo común "Autenticación"
+ *   con la entidad Usuario, que modela el docente como ejemplo.
+ * - HUs en "Por hacer", agrupadas por capa:
+ *     · MODELO: 1 por tabla (18) + Usuario (ejemplo del docente) = 19
+ *     · REPOSITORIO JPA con consultas personalizadas: 1 por tabla (18)
+ *       + Usuario (ejemplo del docente) = 19
+ *   Cada HU usa los campos y relaciones reales de su tabla y trae criterios
+ *   de aceptación y estimación (puntos). La entidad Usuario y sus HUs quedan
+ *   asignadas al docente.
  *
- * Uso:  npm run seed
+ * IDEMPOTENTE: por defecto actualiza el CONTENIDO de las HUs por su `code` y
+ * CONSERVA el progreso (responsable, estado, orden, fechas) y las membresías de
+ * los estudiantes. Las HUs nuevas (p. ej. de capas futuras) entran en "Por
+ * hacer". Ideal para ir agregando HUs sin perder lo que el equipo ya avanzó.
+ *
+ * Uso:  npm run seed          (conserva progreso — recomendado)
+ *       npm run seed:reset    (borra y recrea TODO desde cero)
  */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env.local") });
@@ -121,6 +131,234 @@ function javaType(f) {
   return "String";
 }
 
+// snake_case → camelCase: "fecha_publicacion" → "fechaPublicacion".
+function camel(s) {
+  return s
+    .split("_")
+    .map((w, i) => (i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join("");
+}
+function cap(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+// Propiedad de la relación a partir de la llave foránea: "id_prenda" → "prenda".
+function relProp(fk) {
+  return camel(fk.replace(/^id_/, ""));
+}
+
+// La entidad Usuario es el módulo común de Autenticación. La modela el DOCENTE
+// como ejemplo en clase. Otras tablas la referencian (FK), así que aquí las
+// relaciones son inversas (@OneToMany).
+const USUARIO = {
+  table: "usuarios",
+  fields: ["id", "nombre", "email", "password_hash", "rol", "activo", "avatar_color", "fecha_registro"],
+  // Cómo se ven los campos ya tipados (fecha_registro es un instante → LocalDateTime).
+  fieldsTyped:
+    "nombre (String), email (String), password_hash (String), rol (String), activo (Boolean), avatar_color (String), fecha_registro (LocalDateTime)",
+  inverseRelations: [
+    { Entity: "Prenda", mappedBy: "vendedor", desc: "prendas publicadas por el usuario" },
+    { Entity: "Pedido", mappedBy: "comprador", desc: "pedidos realizados por el usuario" },
+    { Entity: "Trueque", mappedBy: "proponente", desc: "trueques propuestos por el usuario" },
+    { Entity: "Resena", mappedBy: "autor", desc: "reseñas escritas por el usuario" },
+    { Entity: "Reporte", mappedBy: "reportante", desc: "reportes hechos por el usuario" },
+  ],
+};
+
+/**
+ * Genera consultas personalizadas (métodos derivados de Spring Data) acordes a
+ * los campos y relaciones reales de cada tabla. Devuelve [{ sig, desc }].
+ * Se limita a 5 para que la HU no quede demasiado larga.
+ */
+function derivedQueries(st, relList, Entity) {
+  const fields = st.fields;
+  const has = (f) => fields.includes(f);
+  const out = [];
+
+  // Por la entidad relacionada (lo más frecuente: "dame los X de esta Y").
+  relList.forEach((r) => {
+    const prop = relProp(r.fk);
+    out.push({
+      sig: `List<${Entity}> findBy${cap(prop)}(${r.Entity} ${prop})`,
+      desc: `lista los registros asociados a una ${r.Entity}`,
+    });
+  });
+
+  // Búsqueda parcial por un campo de texto representativo.
+  const textField = ["titulo", "nombre", "codigo", "codigo_guia", "slug"].find(has);
+  if (textField) {
+    out.push({
+      sig: `List<${Entity}> findBy${cap(camel(textField))}ContainingIgnoreCase(String ${camel(textField)})`,
+      desc: `búsqueda parcial por ${textField}, sin distinguir mayúsculas y minúsculas`,
+    });
+  }
+
+  // Por estado.
+  if (has("estado")) {
+    out.push({ sig: `List<${Entity}> findByEstado(String estado)`, desc: "filtra por estado" });
+  }
+
+  // Por un campo booleano (disponibilidad/activación).
+  const boolField = fields.find((f) =>
+    /^(disponible|activa|activo|recomendado|visible|verificada|aceptado|resuelto|requiere_revision|es_principal|editada)$/.test(f)
+  );
+  if (boolField) {
+    out.push({
+      sig: `List<${Entity}> findBy${cap(camel(boolField))}True()`,
+      desc: `devuelve solo los que tienen ${boolField} = true`,
+    });
+  }
+
+  // Por fecha: del más reciente al más antiguo.
+  const dateField = fields.find((f) => /^fecha/.test(f));
+  if (dateField) {
+    out.push({
+      sig: `List<${Entity}> findAllByOrderBy${cap(camel(dateField))}Desc()`,
+      desc: `ordena del más reciente al más antiguo por ${dateField}`,
+    });
+  }
+
+  // Por un valor numérico mínimo.
+  const numField = ["precio", "total", "monto", "puntaje", "valor_estimado", "costo", "subtotal"].find(has);
+  if (numField) {
+    out.push({
+      sig: `List<${Entity}> findBy${cap(camel(numField))}GreaterThanEqual(Double ${camel(numField)}Minimo)`,
+      desc: `filtra por ${numField} mayor o igual al valor recibido`,
+    });
+  }
+
+  return out.slice(0, 5);
+}
+
+// Una consulta con @Query (JPQL) acorde a la tabla, para que practiquen @Param.
+function jpqlQuery(st, relList, Entity) {
+  const a = Entity.charAt(0).toLowerCase();
+  if (relList.length > 0) {
+    const r = relList[0];
+    const prop = relProp(r.fk);
+    return {
+      annotation: `@Query("SELECT ${a} FROM ${Entity} ${a} WHERE ${a}.${prop}.id = :${prop}Id")`,
+      sig: `List<${Entity}> buscarPor${r.Entity}Id(@Param("${prop}Id") UUID ${prop}Id)`,
+      desc: `trae los registros de una ${r.Entity} a partir de su id`,
+    };
+  }
+  if (st.fields.includes("estado")) {
+    return {
+      annotation: `@Query("SELECT COUNT(${a}) FROM ${Entity} ${a} WHERE ${a}.estado = :estado")`,
+      sig: `long contarPorEstado(@Param("estado") String estado)`,
+      desc: "cuenta cuántos registros hay en un estado dado",
+    };
+  }
+  const textField = ["nombre", "titulo", "codigo"].find((f) => st.fields.includes(f)) || "nombre";
+  return {
+    annotation: `@Query("SELECT ${a} FROM ${Entity} ${a} WHERE LOWER(${a}.${camel(textField)}) LIKE LOWER(CONCAT('%', :texto, '%'))")`,
+    sig: `List<${Entity}> buscarPor${cap(camel(textField))}(@Param("texto") String texto)`,
+    desc: `busca por ${textField} con LIKE (parcial)`,
+  };
+}
+
+/**
+ * Construye SOLO la definición de una HU de "repositorio JPA con consultas
+ * personalizadas" (título, descripción, criterios, tipo, prioridad, puntos).
+ * Los campos de progreso (responsable, estado, orden…) los pone el upsert.
+ */
+function buildRepoDef({ st, relList, Entity }) {
+  const queries = derivedQueries(st, relList, Entity);
+  const jpql = jpqlQuery(st, relList, Entity);
+  return {
+    title: `Crear el repositorio JPA de \`${Entity}\` con consultas personalizadas`,
+    description: `Crea la interfaz \`${Entity}Repository\` que extiende \`JpaRepository<${Entity}, UUID>\` y anótala con @Repository. Además de las operaciones CRUD heredadas (save, findById, findAll, deleteById), define consultas personalizadas con dos técnicas: (1) métodos derivados por nombre (query methods de Spring Data) y (2) al menos una consulta con @Query en JPQL usando @Param. Las consultas deben tener sentido para la tabla \`${st.table}\` según sus campos y relaciones.`,
+    acceptanceCriteria: [
+      `La interfaz \`${Entity}Repository\` extiende \`JpaRepository<${Entity}, UUID>\` y está anotada con @Repository.`,
+      "Se reutilizan las operaciones CRUD heredadas (save, findById, findAll, deleteById) sin volver a programarlas.",
+      ...queries.map((q) => `Método derivado (query method): \`${q.sig}\` — ${q.desc}.`),
+      `Al menos una consulta con @Query (JPQL): ${jpql.annotation} sobre \`${jpql.sig}\` — ${jpql.desc}.`,
+      "Cada consulta personalizada se prueba (desde un test o el servicio) y devuelve los datos esperados.",
+    ],
+    type: "repositorio",
+    priority: "medium",
+    points: 3,
+  };
+}
+
+/**
+ * Construye la definición de la HU de modelado de una tabla de estudiante.
+ */
+function buildModeloDef({ st, relList, Entity }) {
+  const fieldsTyped = st.fields
+    .filter((f) => f !== "id")
+    .map((f) => `${f} (${javaType(f)})`)
+    .join(", ");
+  const relatedNames = relList.map((x) => x.Entity);
+  const relacionaCon =
+    relatedNames.length > 0
+      ? `Esta entidad SE RELACIONA CON: ${[...new Set(relatedNames)].join(", ")} (con @ManyToOne desde su llave foránea).`
+      : "Esta entidad NO se relaciona con otras tablas.";
+  const relCriteria =
+    relList.length > 0
+      ? relList.map(
+          (x) =>
+            `Relación con \`${x.Entity}\` (tabla ${x.target}): el campo ${x.fk} se mapea como @ManyToOne hacia ${x.Entity}.`
+        )
+      : ["Esta entidad no se relaciona con otras tablas (no requiere @ManyToOne)."];
+  return {
+    title: `Modelar la entidad \`${Entity}\` (tabla ${st.table}) en Spring Boot`,
+    description: `Crea la clase de entidad JPA que representa la tabla \`${st.table}\`. Anota la clase con @Entity y @Table(name = "${st.table}"). La llave primaria \`id\` es de tipo UUID (con @Id y @GeneratedValue de estrategia UUID). Mapea cada campo con @Column respetando su tipo de dato. ${relacionaCon} Configura esas relaciones con @ManyToOne (y opcionalmente @OneToMany en el lado inverso) y evita las relaciones muchos-a-muchos (@ManyToMany).`,
+    acceptanceCriteria: [
+      `La clase \`${Entity}\` está anotada con @Entity y @Table(name = "${st.table}").`,
+      "El campo id es de tipo UUID, anotado con @Id y @GeneratedValue(strategy = GenerationType.UUID).",
+      `Cada campo se mapea con @Column con su tipo de dato: ${fieldsTyped}.`,
+      ...relCriteria,
+      "No se usan relaciones muchos-a-muchos (@ManyToMany).",
+    ],
+    type: "modelo",
+    priority: "high",
+    points: 3,
+  };
+}
+
+// Definición de la HU de modelado de la entidad Usuario (ejemplo del docente).
+function usuarioModeloDef() {
+  return {
+    title: "Modelar la entidad `Usuario` (tabla usuarios) en Spring Boot — ejemplo del docente",
+    description:
+      'Ejemplo guiado en clase. Crea la entidad JPA del módulo común de Autenticación. Anota la clase con @Entity y @Table(name = "usuarios"). La llave primaria `id` es UUID (@Id y @GeneratedValue de estrategia UUID). Mapea cada campo con @Column; el `email` debe ser único (@Column(nullable = false, unique = true)) y el `password_hash` guarda SIEMPRE la contraseña cifrada (nunca en texto plano). Como muchas tablas apuntan a usuarios, aquí las relaciones son INVERSAS: usa @OneToMany(mappedBy = ...) hacia esas entidades.',
+    acceptanceCriteria: [
+      'La clase `Usuario` está anotada con @Entity y @Table(name = "usuarios").',
+      "El campo id es de tipo UUID, anotado con @Id y @GeneratedValue(strategy = GenerationType.UUID).",
+      "El email es único: @Column(nullable = false, unique = true).",
+      `Cada campo se mapea con @Column con su tipo de dato: ${USUARIO.fieldsTyped}.`,
+      ...USUARIO.inverseRelations.map(
+        (r) => `Relación @OneToMany(mappedBy = "${r.mappedBy}") hacia \`${r.Entity}\`: ${r.desc}.`
+      ),
+      "La contraseña se almacena cifrada (hash con BCrypt), nunca en texto plano.",
+    ],
+    type: "modelo",
+    priority: "high",
+    points: 3,
+  };
+}
+
+// Definición de la HU del repositorio de Usuario (orientado al login).
+function usuarioRepoDef() {
+  return {
+    title: "Crear el repositorio JPA de `Usuario` con consultas personalizadas",
+    description:
+      "Ejemplo guiado en clase. Crea la interfaz `UsuarioRepository` que extiende `JpaRepository<Usuario, UUID>` y anótala con @Repository. Define las consultas personalizadas que necesita la autenticación: buscar por correo para iniciar sesión, validar que el correo no exista al registrar, listar usuarios activos y filtrar por rol. Combina métodos derivados por nombre y al menos una consulta con @Query (JPQL).",
+    acceptanceCriteria: [
+      "La interfaz `UsuarioRepository` extiende `JpaRepository<Usuario, UUID>` y está anotada con @Repository.",
+      "Método derivado: `Optional<Usuario> findByEmail(String email)` — clave para autenticar en el login.",
+      "Método derivado: `boolean existsByEmail(String email)` — valida correo único al registrar.",
+      "Método derivado: `List<Usuario> findByActivoTrue()` — lista solo los usuarios activos.",
+      "Método derivado: `List<Usuario> findByRol(String rol)` — filtra por rol (docente/estudiante).",
+      'Consulta con @Query (JPQL): @Query("SELECT u FROM Usuario u WHERE LOWER(u.email) = LOWER(:email)") sobre `Optional<Usuario> buscarPorEmail(@Param("email") String email)` — búsqueda de correo sin distinguir mayúsculas.',
+      "Cada consulta personalizada se prueba (desde un test o el servicio) y devuelve los datos esperados.",
+    ],
+    type: "repositorio",
+    priority: "high",
+    points: 3,
+  };
+}
+
 function slugifyEmail(name) {
   return (
     name
@@ -133,7 +371,13 @@ function slugifyEmail(name) {
 }
 
 async function run() {
-  console.log("→ Conectando a MongoDB…");
+  // Modo RESET: borra y recrea todo el proyecto de ejemplo desde cero (pierde
+  // asignaciones y avance). Por defecto la semilla es IDEMPOTENTE: actualiza el
+  // contenido de las HUs por código y CONSERVA el progreso (responsable,
+  // estado, orden, fechas) y las membresías de los estudiantes.
+  const RESET = process.argv.includes("--reset") || process.env.SEED_RESET === "1";
+
+  console.log(`→ Conectando a MongoDB… (modo: ${RESET ? "RESET total" : "conservar progreso"})`);
   await mongoose.connect(MONGODB_URI);
 
   // 1) Docente admin (upsert por email)
@@ -159,28 +403,20 @@ async function run() {
     console.log(`• Superadmin actualizado: ${ADMIN.email} / ${ADMIN.password}`);
   }
 
-  // 1.5) Eliminar estudiantes de ejemplo de corridas anteriores (@revuelta.edu).
-  const delStudents = await User.deleteMany({
-    role: "estudiante",
-    email: { $regex: /@revuelta\.edu$/ },
-  });
-  if (delStudents.deletedCount) {
-    console.log(`• ${delStudents.deletedCount} estudiantes de ejemplo eliminados`);
+  // 1.5) En RESET eliminamos también los estudiantes de ejemplo (@revuelta.edu)
+  // de corridas viejas. En modo conservar NO tocamos cuentas de estudiantes.
+  if (RESET) {
+    const delStudents = await User.deleteMany({
+      role: "estudiante",
+      email: { $regex: /@revuelta\.edu$/ },
+    });
+    if (delStudents.deletedCount) {
+      console.log(`• ${delStudents.deletedCount} estudiantes de ejemplo eliminados`);
+    }
   }
 
-  // 2) Recrear proyecto de ejemplo (limpio)
-  const existing = await Project.findOne({ slug: "revuelta" });
-  if (existing) {
-    await Promise.all([
-      Story.deleteMany({ project: existing._id }),
-      Team.deleteMany({ project: existing._id }),
-      Membership.deleteMany({ project: existing._id }),
-    ]);
-    await Project.deleteOne({ _id: existing._id });
-    console.log("• Proyecto de ejemplo anterior eliminado");
-  }
-
-  const project = await Project.create({
+  // 2) Proyecto de ejemplo (upsert por slug; en RESET se borra y recrea).
+  const projectFields = {
     name: "ReVuelta",
     slug: "revuelta",
     description:
@@ -194,88 +430,142 @@ async function run() {
     color: "#1D4ED8",
     owner: admin._id,
     archived: false,
+  };
+  let project = await Project.findOne({ slug: "revuelta" });
+  if (project && RESET) {
+    await Promise.all([
+      Story.deleteMany({ project: project._id }),
+      Team.deleteMany({ project: project._id }),
+      Membership.deleteMany({ project: project._id }),
+    ]);
+    await Project.deleteOne({ _id: project._id });
+    project = null;
+    console.log("• Proyecto de ejemplo anterior eliminado (RESET)");
+  }
+  if (!project) {
+    project = await Project.create(projectFields);
+    console.log("✓ Proyecto 'ReVuelta' creado");
+  } else {
+    await Project.updateOne({ _id: project._id }, { $set: projectFields });
+    console.log("• Proyecto 'ReVuelta' actualizado (se conserva el progreso)");
+  }
+
+  // Upsert de equipo por (proyecto, nombre): mantiene su _id estable para que
+  // membresías e historias no pierdan su referencia entre corridas.
+  async function upsertTeam(name, fields) {
+    const existing = await Team.findOne({ project: project._id, name });
+    if (existing) {
+      await Team.updateOne({ _id: existing._id }, { $set: fields });
+      return existing;
+    }
+    return Team.create({ project: project._id, name, ...fields });
+  }
+
+  // Equipo común de Autenticación: aquí vive la entidad Usuario (ejemplo del docente).
+  const authTeam = await upsertTeam("Común · Autenticación", {
+    moduleName: "Autenticación y Usuarios (módulo común)",
+    color: "#0891B2",
+    description:
+      "Módulo transversal: la entidad Usuario y la seguridad con JWT. Ejemplo guiado por el docente.",
   });
-  await Membership.create({ project: project._id, user: admin._id, team: null });
-  console.log("✓ Proyecto 'ReVuelta' creado");
 
-  // 3) Equipos, estudiantes y HUs (todas en "todo", orden por temática)
-  let studentIdx = 0;
+  // Membresía del docente en el módulo común (upsert, sin duplicar).
+  const adminMem = await Membership.findOne({ project: project._id, user: admin._id });
+  if (!adminMem) {
+    await Membership.create({ project: project._id, user: admin._id, team: authTeam._id, scrumMaster: true });
+  } else {
+    await Membership.updateOne({ _id: adminMem._id }, { $set: { team: authTeam._id, scrumMaster: true } });
+  }
+  console.log("✓ Proyecto y equipo común listos");
+
+  // 3) Equipos de estudiantes (upsert por nombre) + lista de tablas.
   let storyCount = 0;
-
-  // Creamos los equipos y la lista de tablas (SIN estudiantes: ellos se
-  // registran solos y el docente los agrega al tablero después).
-  const roster = []; // { teamDef, team, student(table), si, studentIdx }
+  const roster = []; // { teamDef, team, student(table), si }
   for (const teamDef of TEAMS) {
-    const team = await Team.create({
-      project: project._id,
-      name: teamDef.name,
+    const team = await upsertTeam(teamDef.name, {
       moduleName: teamDef.moduleName,
       color: teamDef.color,
-      description: "",
     });
-
     for (let si = 0; si < teamDef.students.length; si++) {
-      roster.push({ teamDef, team, student: teamDef.students[si], si, studentIdx });
-      studentIdx++;
+      roster.push({ teamDef, team, student: teamDef.students[si], si });
     }
     console.log(`✓ ${teamDef.name}: ${teamDef.students.length} tablas`);
   }
 
-  // 18 HUs iniciales: UNA por tabla, enfocada en modelar la entidad en
-  // Spring Boot (@Entity, @Table, @Id y relaciones @ManyToOne/@OneToMany).
-  for (const r of roster) {
-    const st = r.student;
-    const Entity = pascal(st.table);
-    const fieldsNoId = st.fields.filter((f) => f !== "id");
-    const fieldsTyped = fieldsNoId.map((f) => `${f} (${javaType(f)})`).join(", ");
-
-    // Cada relación "id_x → tabla" se modela como @ManyToOne hacia esa entidad.
-    const relList = (st.relations || []).map((rel) => {
+  // Convierte las relaciones "id_x → tabla" en {fk, target, Entity}.
+  const relListOf = (st) =>
+    (st.relations || []).map((rel) => {
       const [fk, target] = rel.split("→").map((s) => s.trim());
       return { fk, target, Entity: pascal(target) };
     });
-    const relatedNames = relList.map((x) => x.Entity);
-    // Para nombrar las entidades sin repetir (ej. trueques se relaciona 2 veces con Prendas).
-    const relacionaCon =
-      relatedNames.length > 0
-        ? `Esta entidad SE RELACIONA CON: ${[...new Set(relatedNames)].join(", ")} (con @ManyToOne desde su llave foránea).`
-        : "Esta entidad NO se relaciona con otras tablas.";
-    const relCriteria =
-      relList.length > 0
-        ? relList.map(
-            (x) =>
-              `Relación con \`${x.Entity}\` (tabla ${x.target}): el campo ${x.fk} se mapea como @ManyToOne hacia ${x.Entity}.`
-          )
-        : ["Esta entidad no se relaciona con otras tablas (no requiere @ManyToOne)."];
 
-    await Story.create({
-      project: project._id,
-      team: r.team._id,
-      assignee: null, // sin asignar: cada estudiante toma su HU al entrar
+  // ── Definición de TODAS las HUs, en orden de visualización ───────────────
+  // Cada entrada: { code, team, defaultAssignee, def }. El `def` es solo la
+  // DEFINICIÓN (título, descripción, criterios, tipo, prioridad, puntos); el
+  // progreso (responsable, estado, orden, fechas) lo decide el upsert.
+  const storyDefs = [];
+
+  // Bloque 1: MODELOS (Usuario primero, luego las 18 tablas).
+  storyDefs.push({ code: "USR-01", team: authTeam._id, defaultAssignee: admin._id, def: usuarioModeloDef() });
+  for (const r of roster) {
+    const Entity = pascal(r.student.table);
+    storyDefs.push({
       code: `${r.teamDef.prefix}-${String(r.si + 1).padStart(2, "0")}`,
-      title: `Modelar la entidad \`${Entity}\` (tabla ${st.table}) en Spring Boot`,
-      description: `Crea la clase de entidad JPA que representa la tabla \`${st.table}\`. Anota la clase con @Entity y @Table(name = "${st.table}"). La llave primaria \`id\` es de tipo UUID (con @Id y @GeneratedValue de estrategia UUID). Mapea cada campo con @Column respetando su tipo de dato. ${relacionaCon} Configura esas relaciones con @ManyToOne (y opcionalmente @OneToMany en el lado inverso) y evita las relaciones muchos-a-muchos (@ManyToMany).`,
-      acceptanceCriteria: [
-        `La clase \`${Entity}\` está anotada con @Entity y @Table(name = "${st.table}").`,
-        "El campo id es de tipo UUID, anotado con @Id y @GeneratedValue(strategy = GenerationType.UUID).",
-        `Cada campo se mapea con @Column con su tipo de dato: ${fieldsTyped}.`,
-        ...relCriteria,
-        "No se usan relaciones muchos-a-muchos (@ManyToMany).",
-      ],
-      type: "modelo",
-      status: "todo",
-      priority: "high",
-      points: 3,
-      order: r.studentIdx,
-      blockedReason: "",
-      dueDate: null,
-      completedAt: null,
+      team: r.team._id,
+      defaultAssignee: null,
+      def: buildModeloDef({ st: r.student, relList: relListOf(r.student), Entity }),
     });
+  }
+
+  // Bloque 2: REPOSITORIOS JPA (Usuario primero, luego las 18 tablas).
+  storyDefs.push({ code: "USR-R01", team: authTeam._id, defaultAssignee: admin._id, def: usuarioRepoDef() });
+  for (const r of roster) {
+    const Entity = pascal(r.student.table);
+    storyDefs.push({
+      code: `${r.teamDef.prefix}-R${String(r.si + 1).padStart(2, "0")}`,
+      team: r.team._id,
+      defaultAssignee: null,
+      def: buildRepoDef({ st: r.student, relList: relListOf(r.student), Entity }),
+    });
+  }
+
+  // ── UPSERT por código: conserva el progreso de las HUs que ya existen ─────
+  const prev = await Story.find({ project: project._id });
+  const prevByCode = new Map(prev.map((s) => [s.code, s]));
+  let nextOrder = prev.reduce((m, s) => Math.max(m, s.order ?? 0), -1) + 1;
+  let created = 0;
+  let updated = 0;
+  for (const sd of storyDefs) {
+    const existing = prevByCode.get(sd.code);
+    if (existing) {
+      // Solo actualizamos la DEFINICIÓN; conservamos responsable, estado, orden,
+      // bloqueo y fechas tal como los dejó el equipo.
+      await Story.updateOne({ _id: existing._id }, { $set: { team: sd.team, ...sd.def } });
+      updated++;
+    } else {
+      // HU nueva: entra "Por hacer", al final del orden actual.
+      await Story.create({
+        project: project._id,
+        team: sd.team,
+        assignee: sd.defaultAssignee || null,
+        code: sd.code,
+        ...sd.def,
+        status: "todo",
+        order: nextOrder++,
+        blockedReason: "",
+        dueDate: null,
+        completedAt: null,
+      });
+      created++;
+    }
     storyCount++;
   }
 
-  console.log(`✓ ${storyCount} historias creadas (todas en "Por hacer", sin asignar)`);
-  console.log("• Sin estudiantes: se registran ellos mismos y luego los agregas al tablero.");
+  console.log(`✓ ${storyCount} HUs procesadas — ${created} nuevas, ${updated} actualizadas.`);
+  if (!RESET) {
+    console.log("• Se conservaron responsable, estado y avance de las HUs existentes.");
+  }
+  console.log("• La entidad Usuario (modelo + repositorio) queda asignada al docente como ejemplo.");
   console.log("\n✅ Semilla completada.");
   console.log(`   Entra como superadmin: ${ADMIN.email} / ${ADMIN.password}`);
   await mongoose.disconnect();

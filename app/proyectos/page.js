@@ -6,8 +6,11 @@ import { api } from "@/components/api";
 import TopBar from "@/components/TopBar";
 import { CardsSkeleton, EmptyState, Modal } from "@/components/ui";
 import { toast } from "@/components/toast";
-import { Target, Kanban, Plus } from "@/components/icons";
+import { Target, Kanban, Plus, ExternalLink } from "@/components/icons";
 import { ROLES } from "@/lib/constants";
+
+// Sitio público del proyecto académico ReVuelta (se enlaza desde su tarjeta).
+const REVUELTA_URL = "https://re-vuelta.vercel.app/";
 
 export default function ProjectsPage() {
   const [user, setUser] = useState(null);
@@ -67,33 +70,44 @@ export default function ProjectsPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {projects.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/proyecto/${p.id}`}
-                  className="card group p-5 transition hover:shadow-lift"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-3 w-3 rounded-full"
-                      style={{ background: p.color }}
-                    />
-                    <span className="text-[11px] font-mono uppercase tracking-wide text-ink/40">
-                      {p.slug}
-                    </span>
-                  </div>
-                  <h3 className="mt-2 text-lg font-bold text-ink group-hover:text-pine">
-                    {p.name}
-                  </h3>
-                  <p className="mt-1 line-clamp-2 text-sm text-ink/55">
-                    {p.description || "Sin descripción"}
-                  </p>
-                  {p.objectives?.length > 0 && (
-                    <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-pine">
-                      <Target size={13} /> {p.objectives.length} objetivo
-                      {p.objectives.length > 1 ? "s" : ""}
+                <div key={p.id} className="flex flex-col">
+                  <Link
+                    href={`/proyecto/${p.id}`}
+                    className="card group flex-1 p-5 transition hover:shadow-lift"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-3 w-3 rounded-full"
+                        style={{ background: p.color }}
+                      />
+                      <span className="text-[11px] font-mono uppercase tracking-wide text-ink/40">
+                        {p.slug}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 text-lg font-bold text-ink group-hover:text-pine">
+                      {p.name}
+                    </h3>
+                    <p className="mt-1 line-clamp-2 text-sm text-ink/55">
+                      {p.description || "Sin descripción"}
                     </p>
+                    {p.objectives?.length > 0 && (
+                      <p className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-pine">
+                        <Target size={13} /> {p.objectives.length} objetivo
+                        {p.objectives.length > 1 ? "s" : ""}
+                      </p>
+                    )}
+                  </Link>
+                  {p.slug === "revuelta" && (
+                    <a
+                      href={REVUELTA_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 flex items-center justify-center gap-1.5 rounded-xl border border-line bg-paper-2/50 px-3 py-2 text-xs font-semibold text-pine hover:border-pine hover:text-clay"
+                    >
+                      <ExternalLink size={14} /> Conoce el proyecto ReVuelta
+                    </a>
                   )}
-                </Link>
+                </div>
               ))}
             </div>
           )}

@@ -56,6 +56,14 @@ export default function BoardPage() {
   // Estudiante sin equipo: no puede ver ninguna HU hasta que lo asignen.
   const studentNoTeam = isStudent && !myTeam;
 
+  // El docente ve a todos los integrantes; un estudiante (incluido el Scrum
+  // Master) solo debe ver/asignar a los integrantes de SU equipo.
+  const assignableMembers = useMemo(() => {
+    if (isDocente) return members;
+    if (myTeam) return members.filter((m) => String(m.team) === String(myTeam));
+    return [];
+  }, [members, isDocente, myTeam]);
+
   const filtered = useMemo(() => {
     // El estudiante queda bloqueado a las HUs de SU equipo.
     if (isStudent) {
@@ -176,7 +184,7 @@ export default function BoardPage() {
                 onChange={(e) => setFilterAssignee(e.target.value)}
               >
                 <option value="">Todos los responsables</option>
-                {members.map((m) => (
+                {assignableMembers.map((m) => (
                   <option key={m.user.id} value={m.user.id}>
                     {m.user.name}
                   </option>
@@ -208,6 +216,7 @@ export default function BoardPage() {
           projectId={id}
           teams={teams}
           members={members}
+          ownerId={project?.owner?.id || project?.owner}
           onClose={() => setShowMembers(false)}
           onAdded={(membership) => {
             setMembers((prev) => [...prev, membership]);
@@ -231,7 +240,7 @@ export default function BoardPage() {
       {modal && (
         <StoryModal
           story={modal.story}
-          members={members}
+          members={assignableMembers}
           teams={teams}
           isDocente={isDocente}
           canAssign={

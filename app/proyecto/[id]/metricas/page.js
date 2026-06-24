@@ -20,6 +20,7 @@ import { Avatar, Badge } from "@/components/ui";
 import LoadingScreen from "@/components/LoadingScreen";
 import { ChartColumn, Star, Flame, Circle, CircleCheck } from "@/components/icons";
 import { buildTabs } from "@/components/projectNav";
+import { STATUS_META } from "@/lib/constants";
 
 const HEALTH = {
   excelente: { label: "Va excelente", color: "#0D9488", Icon: Star },
@@ -54,6 +55,11 @@ export default function MetricsPage() {
   const { summary, statusDistribution, byTeam, byMember } = metrics;
   const sinAvance = summary.total > 0 && summary.done === 0;
   const sinHistorias = summary.total === 0;
+
+  // Solo estudiantes con HUs asignadas entran en las gráficas por estudiante.
+  const chartMembers = byMember.filter((m) => m.total > 0);
+  // Altura dinámica: ~38px por barra para que se lean bien aunque sean muchos.
+  const memberChartHeight = Math.max(220, chartMembers.length * 38);
 
   return (
     <div className="min-h-screen">
@@ -126,6 +132,71 @@ export default function MetricsPage() {
                   <Bar dataKey="completionRate" radius={[0, 6, 6, 0]} fill="#1F5E4A">
                     {byTeam.map((t) => (
                       <Cell key={t.teamId || "none"} fill={t.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Gráficas de desempeño por estudiante */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Carga por estudiante: HUs por estado (apiladas) */}
+          <div className="card p-5">
+            <h3 className="mb-1 font-bold text-ink">Carga por estudiante</h3>
+            <p className="mb-4 text-sm text-ink/55">
+              Cuántas historias tiene cada quien y en qué estado están.
+            </p>
+            {chartMembers.length === 0 ? (
+              <p className="py-10 text-center text-sm text-ink/45">
+                Aún no hay estudiantes con historias asignadas.
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={memberChartHeight}>
+                <BarChart data={chartMembers} layout="vertical" margin={{ left: 20 }}>
+                  <XAxis type="number" allowDecimals={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={110}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="done" stackId="a" name={STATUS_META.done.label} fill={STATUS_META.done.color} radius={[6, 0, 0, 6]} />
+                  <Bar dataKey="in_progress" stackId="a" name={STATUS_META.in_progress.label} fill={STATUS_META.in_progress.color} />
+                  <Bar dataKey="blocked" stackId="a" name={STATUS_META.blocked.label} fill={STATUS_META.blocked.color} />
+                  <Bar dataKey="todo" stackId="a" name={STATUS_META.todo.label} fill={STATUS_META.todo.color} radius={[0, 6, 6, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Tasa de finalización por estudiante */}
+          <div className="card p-5">
+            <h3 className="mb-1 font-bold text-ink">Tasa de finalización por estudiante</h3>
+            <p className="mb-4 text-sm text-ink/55">
+              Porcentaje de sus historias que ya están terminadas.
+            </p>
+            {chartMembers.length === 0 ? (
+              <p className="py-10 text-center text-sm text-ink/45">
+                Aún no hay estudiantes con historias asignadas.
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={memberChartHeight}>
+                <BarChart data={chartMembers} layout="vertical" margin={{ left: 20 }}>
+                  <XAxis type="number" domain={[0, 100]} hide />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={110}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <Tooltip formatter={(v) => `${v}%`} />
+                  <Bar dataKey="completionRate" name="Completado" radius={[0, 6, 6, 0]} fill="#1D4ED8">
+                    {chartMembers.map((m) => (
+                      <Cell key={m.userId} fill={(HEALTH[m.health] || HEALTH.normal).color} />
                     ))}
                   </Bar>
                 </BarChart>

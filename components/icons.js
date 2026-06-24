@@ -43,5 +43,6 @@ export {
   CalendarClock,
   ListChecks,
   User,
+  UserCog,
   ExternalLink,
 } from "lucide-react";
