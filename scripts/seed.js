@@ -57,7 +57,7 @@ const TEAMS = [
     students: [
       { name: "Ahumada Roldan Daniel", table: "prendas", fields: ["id", "titulo", "descripcion", "talla", "precio", "fecha_publicacion", "disponible"], relations: ["id_categoria → categorias", "id_estado → estados_prenda", "id_vendedor → usuarios"] },
       { name: "Gil Pérez Jonatan Stiven", table: "categorias", fields: ["id", "nombre", "descripcion", "slug", "icono", "activa", "orden"], relations: [] },
-      { name: "Mejía Corrales Andres Felipe", table: "imagenes_prenda", fields: ["id", "url", "es_principal", "orden", "formato", "tamano_kb", "fecha_subida"], relations: ["id_prenda → prendas"] },
+      { name: "Mejía Corrales Andres Felipe", table: "imagenes_prenda", fields: ["id", "url", "es_principal", "orden", "formato", "tamaño_kb", "fecha_subida"], relations: ["id_prenda → prendas"] },
       { name: "Salazar Arango John Alexander", table: "estados_prenda", fields: ["id", "nombre", "descripcion", "nivel_desgaste", "color_etiqueta", "requiere_revision", "activo"], relations: [] },
     ],
   },
@@ -91,8 +91,8 @@ const TEAMS = [
     prefix: "MER",
     color: "#6366F1",
     students: [
-      { name: "Alzate Grajales Alejandro", table: "campanas", fields: ["id", "nombre", "descripcion", "fecha_inicio", "fecha_fin", "descuento_pct", "activa"], relations: [] },
-      { name: "Aristizábal Londoño Alejandro", table: "cupones", fields: ["id", "codigo", "tipo", "valor", "usos_maximos", "usos_actuales", "fecha_expiracion"], relations: ["id_campana → campanas"] },
+      { name: "Alzate Grajales Alejandro", table: "campañas", fields: ["id", "nombre", "descripcion", "fecha_inicio", "fecha_fin", "descuento_pct", "activa"], relations: [] },
+      { name: "Aristizábal Londoño Alejandro", table: "cupones", fields: ["id", "codigo", "tipo", "valor", "usos_maximos", "usos_actuales", "fecha_expiracion"], relations: ["id_campaña → campañas"] },
       { name: "Torres Rodríguez Juan Esteban", table: "recompensas", fields: ["id", "nombre", "puntos_requeridos", "descripcion", "stock", "tipo", "activa"], relations: [] },
     ],
   },
@@ -102,8 +102,8 @@ const TEAMS = [
     prefix: "COM",
     color: "#1E3A8A",
     students: [
-      { name: "Castaño Ocampo Mauricio", table: "resenas", fields: ["id", "comentario", "titulo", "fecha", "recomendado", "editada", "visible"], relations: ["id_autor → usuarios", "id_usuario_resenado → usuarios"] },
-      { name: "Gudelo Niño Diego Alejandro", table: "calificaciones", fields: ["id", "puntaje", "dimension", "comentario_corto", "fecha", "verificada", "peso"], relations: ["id_resena → resenas"] },
+      { name: "Castaño Ocampo Mauricio", table: "reseñas", fields: ["id", "comentario", "titulo", "fecha", "recomendado", "editada", "visible"], relations: ["id_autor → usuarios", "id_usuario_reseñado → usuarios"] },
+      { name: "Gudelo Niño Diego Alejandro", table: "calificaciones", fields: ["id", "puntaje", "dimension", "comentario_corto", "fecha", "verificada", "peso"], relations: ["id_reseña → reseñas"] },
       { name: "Zapata Barrera Juan David", table: "reportes", fields: ["id", "motivo", "descripcion", "estado", "prioridad", "fecha", "resuelto"], relations: ["id_reportante → usuarios", "id_prenda → prendas"] },
     ],
   },
@@ -126,7 +126,7 @@ function javaType(f) {
   // Dinero y decimales en general → Double (más simple para los estudiantes).
   if (/^(precio|total|subtotal|precio_unitario|monto|valor_estimado|costo|descuento|peso_kg|latitud|longitud|descuento_pct)$/.test(f))
     return "Double";
-  if (/^(cantidad|orden|capacidad|usos_maximos|usos_actuales|puntos_requeridos|stock|nivel_desgaste|puntaje|peso|tamano_kb)$/.test(f))
+  if (/^(cantidad|orden|capacidad|usos_maximos|usos_actuales|puntos_requeridos|stock|nivel_desgaste|puntaje|peso|tamaño_kb)$/.test(f))
     return "Integer";
   return "String";
 }
@@ -151,15 +151,15 @@ function relProp(fk) {
 // relaciones son inversas (@OneToMany).
 const USUARIO = {
   table: "usuarios",
-  fields: ["id", "nombre", "email", "password_hash", "rol", "activo", "avatar_color", "fecha_registro"],
+  fields: ["id", "nombre", "correo", "contraseña_hash", "rol", "activo", "color_avatar", "fecha_registro"],
   // Cómo se ven los campos ya tipados (fecha_registro es un instante → LocalDateTime).
   fieldsTyped:
-    "nombre (String), email (String), password_hash (String), rol (String), activo (Boolean), avatar_color (String), fecha_registro (LocalDateTime)",
+    "nombre (String), correo (String), contraseña_hash (String), rol (String), activo (Boolean), color_avatar (String), fecha_registro (LocalDateTime)",
   inverseRelations: [
     { Entity: "Prenda", mappedBy: "vendedor", desc: "prendas publicadas por el usuario" },
     { Entity: "Pedido", mappedBy: "comprador", desc: "pedidos realizados por el usuario" },
     { Entity: "Trueque", mappedBy: "proponente", desc: "trueques propuestos por el usuario" },
-    { Entity: "Resena", mappedBy: "autor", desc: "reseñas escritas por el usuario" },
+    { Entity: "Reseña", mappedBy: "autor", desc: "reseñas escritas por el usuario" },
     { Entity: "Reporte", mappedBy: "reportante", desc: "reportes hechos por el usuario" },
   ],
 };
@@ -321,11 +321,11 @@ function usuarioModeloDef() {
   return {
     title: "Modelar la entidad `Usuario` (tabla usuarios) en Spring Boot — ejemplo del docente",
     description:
-      'Ejemplo guiado en clase. Crea la entidad JPA del módulo común de Autenticación. Anota la clase con @Entity y @Table(name = "usuarios"). La llave primaria `id` es UUID (@Id y @GeneratedValue de estrategia UUID). Mapea cada campo con @Column; el `email` debe ser único (@Column(nullable = false, unique = true)) y el `password_hash` guarda SIEMPRE la contraseña cifrada (nunca en texto plano). Como muchas tablas apuntan a usuarios, aquí las relaciones son INVERSAS: usa @OneToMany(mappedBy = ...) hacia esas entidades.',
+      'Ejemplo guiado en clase. Crea la entidad JPA del módulo común de Autenticación. Anota la clase con @Entity y @Table(name = "usuarios"). La llave primaria `id` es UUID (@Id y @GeneratedValue de estrategia UUID). Mapea cada campo con @Column; el `correo` debe ser único (@Column(nullable = false, unique = true)) y el `contraseña_hash` guarda SIEMPRE la contraseña cifrada (nunca en texto plano). Como muchas tablas apuntan a usuarios, aquí las relaciones son INVERSAS: usa @OneToMany(mappedBy = ...) hacia esas entidades.',
     acceptanceCriteria: [
       'La clase `Usuario` está anotada con @Entity y @Table(name = "usuarios").',
       "El campo id es de tipo UUID, anotado con @Id y @GeneratedValue(strategy = GenerationType.UUID).",
-      "El email es único: @Column(nullable = false, unique = true).",
+      "El correo es único: @Column(nullable = false, unique = true).",
       `Cada campo se mapea con @Column con su tipo de dato: ${USUARIO.fieldsTyped}.`,
       ...USUARIO.inverseRelations.map(
         (r) => `Relación @OneToMany(mappedBy = "${r.mappedBy}") hacia \`${r.Entity}\`: ${r.desc}.`
@@ -346,11 +346,11 @@ function usuarioRepoDef() {
       "Ejemplo guiado en clase. Crea la interfaz `UsuarioRepository` que extiende `JpaRepository<Usuario, UUID>` y anótala con @Repository. Define las consultas personalizadas que necesita la autenticación: buscar por correo para iniciar sesión, validar que el correo no exista al registrar, listar usuarios activos y filtrar por rol. Combina métodos derivados por nombre y al menos una consulta con @Query (JPQL).",
     acceptanceCriteria: [
       "La interfaz `UsuarioRepository` extiende `JpaRepository<Usuario, UUID>` y está anotada con @Repository.",
-      "Método derivado: `Optional<Usuario> findByEmail(String email)` — clave para autenticar en el login.",
-      "Método derivado: `boolean existsByEmail(String email)` — valida correo único al registrar.",
+      "Método derivado: `Optional<Usuario> findByCorreo(String correo)` — clave para autenticar en el login.",
+      "Método derivado: `boolean existsByCorreo(String correo)` — valida correo único al registrar.",
       "Método derivado: `List<Usuario> findByActivoTrue()` — lista solo los usuarios activos.",
       "Método derivado: `List<Usuario> findByRol(String rol)` — filtra por rol (docente/estudiante).",
-      'Consulta con @Query (JPQL): @Query("SELECT u FROM Usuario u WHERE LOWER(u.email) = LOWER(:email)") sobre `Optional<Usuario> buscarPorEmail(@Param("email") String email)` — búsqueda de correo sin distinguir mayúsculas.',
+      'Consulta con @Query (JPQL): @Query("SELECT u FROM Usuario u WHERE LOWER(u.correo) = LOWER(:correo)") sobre `Optional<Usuario> buscarPorCorreo(@Param("correo") String correo)` — búsqueda de correo sin distinguir mayúsculas.',
       "Cada consulta personalizada se prueba (desde un test o el servicio) y devuelve los datos esperados.",
     ],
     type: "repositorio",
